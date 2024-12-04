@@ -4,66 +4,57 @@ class ProxyRotator {
   constructor(apiKey) {
     this.apiKey = apiKey;
     this.usedProxies = new Set();
-    this.currentProxy = null;
   }
 
   async getNextProxy() {
     try {
-      // This is a placeholder - replace with your actual proxy provider's API
-      const response = await axios.get(`https://proxy-provider.com/api/v1/proxies`, {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`
-        },
+      // IPRoyal proxy endpoint
+      const response = await axios.get('https://iproyal.com/api/v1/proxy', {
         params: {
-          country: 'US',          // Request US proxies
-          type: 'residential',    // Use residential IPs
-          session: 'new'          // Request new session
+          api_key: this.apiKey,
+          country: 'US',
+          city: null,     // Optional: specific city
+          type: 'residential',
+          protocol: 'http',
+          sticky: true,   // Keep same IP for the session
+          timeout: 10     // seconds
         }
       });
 
-      const proxy = response.data.proxy;
-      
-      // Verify we haven't used this IP recently
-      if (this.usedProxies.has(proxy.ip)) {
-        return this.getNextProxy(); // Try again if we've used this IP
+      if (!response.data.success) {
+        throw new Error(response.data.message || 'Failed to get proxy');
       }
 
-      // Add to used proxies and remove oldest if we're tracking too many
-      this.usedProxies.add(proxy.ip);
-      if (this.usedProxies.size > 100) {
-        const firstUsed = this.usedProxies.values().next().value;
-        this.usedProxies.delete(firstUsed);
-      }
-
-      this.currentProxy = proxy;
       return {
-        host: proxy.host,
-        port: proxy.port,
-        username: proxy.username,
-        password: proxy.password,
-        latitude: proxy.latitude,
-        longitude: proxy.longitude
+        host: response.data.proxy.host,
+        port: response.data.proxy.port,
+        username: this.apiKey,    // IPRoyal uses API key as username
+        password: 'proxy_pass'    // Static password for IPRoyal
       };
     } catch (error) {
-      console.error('Failed to get proxy:', error);
+      console.error('Proxy rotation failed:', error.message);
       throw new Error('Failed to get valid proxy');
     }
   }
 
-  async releaseProxy() {
-    if (this.currentProxy) {
-      try {
-        // Some proxy providers require explicitly releasing proxies
-        await axios.post(`https://proxy-provider.com/api/v1/release`, {
-          ip: this.currentProxy.ip
-        }, {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`
+  async validateProxy(proxy) {
+    try {
+      // Test proxy with a simple request
+      const testResponse = await axios.get('https://api.ipify.org?format=json', {
+        proxy: {
+          host: proxy.host,
+          port: proxy.port,
+          auth: {
+            username: proxy.username,
+            password: proxy.password
           }
-        });
-      } catch (error) {
-        console.error('Failed to release proxy:', error);
-      }
+        },
+        timeout: 10000
+      });
+
+      return testResponse.status === 200;
+    } catch (error) {
+      return false;
     }
   }
 }
